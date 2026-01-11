@@ -14,6 +14,7 @@ STATUS_CONNECTING_COLOR = "blue"
 STATUS_CONNECTED_COLOR = "green"
 STATUS_DISCONNECTED_COLOR = "orange"
 STATUS_ERROR_COLOR = "red"
+AUTO_RECONNECT = True
 
 class VideoThread(QThread):
     vt_signal_update_image = Signal(QImage)
@@ -91,13 +92,15 @@ class VideoThread(QThread):
 
         while self._run_flag:
             if not self.cap.isOpened() or not self.cap.grab():
-                # self.vt_signal_update_status_label.emit("ReConnecting...", STATUS_CONNECTING_COLOR)
+                self.vt_signal_update_status_label.emit("ReConnecting...", STATUS_CONNECTING_COLOR)
                 self.vt_signal_update_error_label.emit("Stream lost")
-                break
-                # if not self.reconnect_to_camera():
-                #     break
-                # self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
-                # continue
+                if not AUTO_RECONNECT:
+                    break
+                else:
+                    if not self.reconnect_to_camera():
+                        break
+                    self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
+                    continue
             current_time = time.time()
             time_diff = current_time - self.last_frame_time
             if time_diff >= (1.0 / self.target_fps):
