@@ -1,0 +1,6 @@
+torch
+torchvision
+torchaudio
+ultralytics
+PySide6
+opencv-python
