@@ -1,11 +1,17 @@
-import sys
-import cv2
-import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QGroupBox, QFormLayout)
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QImage, QPixmap, QIntValidator
+
+import sys
+import cv2
+import time
+import os
+from ultralytics import YOLO
+import threading
+import torch
+import queue
 
 WIDTH = 640
 HEIGHT = 480
@@ -15,6 +21,34 @@ STATUS_CONNECTED_COLOR = "green"
 STATUS_DISCONNECTED_COLOR = "orange"
 STATUS_ERROR_COLOR = "red"
 AUTO_RECONNECT = True
+MODEL_PATH = "./models/yolov8s-world.pt"
+# MODEL_PATH = "./models/yolov8s-worldv2.pt"
+# MODEL_PATH = "./models/yolov8m-worldv2.pt"
+model : YOLO = None
+classes : list[str] = []
+command_queue : queue.Queue = queue.Queue()
+
+
+def load_model(model_path):
+        model = YOLO(model_path)
+        model.to('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+        return model
+
+def detect_objects(frame, model : YOLO, classes : list[str]):
+    results = model.predict(frame, verbose=False)    
+    return results[0].plot()
+
+def input_thread(command_queue):
+    print("Input thread started. Enter +class to add or -class to remove (e.g., +cat, -dog).")
+    while True:
+        try:
+            user_input = input().strip()
+            command_queue.put(user_input)
+        except EOFError:
+            break
+        except Exception as e:
+            pass
 
 class VideoThread(QThread):
     vt_signal_update_image = Signal(QImage)
@@ -80,6 +114,8 @@ class VideoThread(QThread):
     def incoming_res(self) -> str: return f"{self.incoming_width}x{self.incoming_height}"
 
     def run(self):
+        global command_queue, classes, model
+
         self.vt_signal_update_status_label.emit("Connecting...", STATUS_CONNECTING_COLOR)
         if not self.connect_to_camera():
             self.vt_signal_update_status_label.emit("Disconnected", STATUS_DISCONNECTED_COLOR)
@@ -101,6 +137,24 @@ class VideoThread(QThread):
                         break
                     self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
                     continue
+
+            while not command_queue.empty():
+                command = command_queue.get()
+                if command.startswith('+'):
+                    class_name = command[1:].strip()
+                    if class_name and class_name not in classes:
+                        classes.append(class_name)
+                        print(f"Added class: {class_name}, current classes {classes}")
+                        target_classes = classes if classes and len(classes) > 0 else ['']
+                        model.set_classes(target_classes)
+                elif command.startswith('-'):
+                    class_name = command[1:].strip()
+                    if class_name in classes:
+                        classes.remove(class_name)
+                        print(f"Removed class: {class_name}, current classes {classes}")
+                        target_classes = classes if classes and len(classes) > 0 else ['']
+                        model.set_classes(target_classes)
+
             current_time = time.time()
             time_diff = current_time - self.last_frame_time
             if time_diff >= (1.0 / self.target_fps):
@@ -108,7 +162,10 @@ class VideoThread(QThread):
                 ret, cv_img = self.cap.retrieve()
                 if not ret:
                     continue
-                p = self.cvimage_to_qimage(cv_img)
+
+                cv_img = cv2.resize(cv_img, (WIDTH, HEIGHT))
+                p = self.cvimage_to_qimage(detect_objects(cv_img, model, classes))
+
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
                 actual_fps = 1.0 / time_diff
                 self.vt_signal_update_fps_label.emit(f"{actual_fps:.1f}")
@@ -312,6 +369,20 @@ class CameraApp(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
+
+    if torch.cuda.is_available():
+        print("CUDA IS AVAILABLE")
+    else:
+        print("CUDA NOT AVAILABLE")
+
+    if not os.path.exists(MODEL_PATH):
+        print(f"Error: Model file '{MODEL_PATH}' not found.")
+        exit(1)
+    model = load_model(MODEL_PATH)
+
+    t = threading.Thread(target=input_thread, args=(command_queue,), daemon=True)
+    t.start()
+
     app = QApplication(sys.argv)
     window = CameraApp()
     window.show()
