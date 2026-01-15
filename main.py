@@ -15,20 +15,21 @@ import queue
 
 WIDTH = 640
 HEIGHT = 480
-DEFAULT_FPS = 25
+DEFAULT_FPS = 30
+DETECTION_SKIP_FRAMES = 30
 STATUS_CONNECTING_COLOR = "blue"
 STATUS_CONNECTED_COLOR = "green"
 STATUS_DISCONNECTED_COLOR = "orange"
 STATUS_ERROR_COLOR = "red"
 AUTO_RECONNECT = True
+
 MODEL_PATH = "./models/yolov8s-world.pt"
 # MODEL_PATH = "./models/yolov8s-worldv2.pt"
 # MODEL_PATH = "./models/yolov8m-worldv2.pt"
+
 model : YOLO = None
 classes : list[str] = []
 command_queue : queue.Queue = queue.Queue()
-
-DETECTION_SKIP_FRAMES = 15
 
 def load_model(model_path):
     print("Loading model...")
