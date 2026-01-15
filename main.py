@@ -28,12 +28,16 @@ model : YOLO = None
 classes : list[str] = []
 command_queue : queue.Queue = queue.Queue()
 
+DETECTION_SKIP_FRAMES = 15
 
 def load_model(model_path):
-        model = YOLO(model_path)
-        model.to('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-        return model
+    print("Loading model...")
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    print(f"Using device: {device}")
+    
+    model = YOLO(model_path)
+    model.to(device)
+    return model
 
 def detect_objects(frame, model : YOLO, classes : list[str]):
     results = model.predict(frame, verbose=False)    
@@ -72,11 +76,8 @@ class VideoThread(QThread):
         self.last_frame_time = 0
         self.incoming_width = 0
         self.incoming_height = 0
-
-    def init(self) -> tuple[bool, str]:
-        if not self.init_video_capture():
-            return False, f"Failed to open {self.rtsp_url}"
-        return True, ""
+        self.last_results = None
+        self.frame_counter = 0
 
     def init_video_capture(self) -> bool:
         self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG, [
@@ -112,6 +113,27 @@ class VideoThread(QThread):
         return convert_to_qt_format.scaled(WIDTH, HEIGHT, Qt.AspectRatioMode.KeepAspectRatio)
 
     def incoming_res(self) -> str: return f"{self.incoming_width}x{self.incoming_height}"
+
+    def draw_detections(self, frame, results):
+        if results is None: return frame
+        
+        for box in results.boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            conf = float(box.conf[0])
+            cls_id = int(box.cls[0])
+
+            try:
+                label_name = results.names[cls_id]
+            except:
+                label_name = ''
+            label_text = f"{label_name} {conf:.2f}"
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            (w, h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(frame, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
+            cv2.putText(frame, label_text, (x1, y1 - 5), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        return frame
 
     def run(self):
         global command_queue, classes, model
@@ -162,10 +184,16 @@ class VideoThread(QThread):
                 ret, cv_img = self.cap.retrieve()
                 if not ret:
                     continue
-
                 cv_img = cv2.resize(cv_img, (WIDTH, HEIGHT))
-                p = self.cvimage_to_qimage(detect_objects(cv_img, model, classes))
 
+                self.frame_counter += 1
+                if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
+                    results = model.predict(cv_img, verbose=False, device=model.device)
+                    self.last_results = results[0]
+                
+                final_img = self.draw_detections(cv_img, self.last_results)
+
+                p = self.cvimage_to_qimage(final_img)
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
                 actual_fps = 1.0 / time_diff
                 self.vt_signal_update_fps_label.emit(f"{actual_fps:.1f}")
@@ -379,6 +407,7 @@ if __name__ == "__main__":
         print(f"Error: Model file '{MODEL_PATH}' not found.")
         exit(1)
     model = load_model(MODEL_PATH)
+    model.set_classes(classes if classes else [''])
 
     t = threading.Thread(target=input_thread, args=(command_queue,), daemon=True)
     t.start()
