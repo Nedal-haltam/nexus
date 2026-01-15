@@ -276,7 +276,7 @@ class CameraApp(QMainWindow):
         
         self.fps_input = QLineEdit()
         self.fps_input.setValidator(QIntValidator(1, 60))
-        self.fps_input.setText("25")
+        self.fps_input.setText(f'{DEFAULT_FPS}')
         
         self.fps_btn = QPushButton("Update")
         self.fps_btn.clicked.connect(self.update_fps)
