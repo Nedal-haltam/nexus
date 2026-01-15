@@ -84,7 +84,7 @@ class VideoThread(QThread):
             cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000
         ])
         if not self.cap.isOpened():
-            return None
+            return False
         self.incoming_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.incoming_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         return True
@@ -96,7 +96,9 @@ class VideoThread(QThread):
             self.vt_signal_enable_connect_button.emit()
             if ret:
                 return True
-            time.sleep(2)
+            for _ in range(20):
+                if not self._run_flag: return False
+                time.sleep(0.1)
         return False
     
     def connect_to_camera(self) -> bool:
@@ -162,20 +164,19 @@ class VideoThread(QThread):
 
             while not command_queue.empty():
                 command = command_queue.get()
-                if command.startswith('+'):
+                try:
+                    action = command[0]
                     class_name = command[1:].strip()
-                    if class_name and class_name not in classes:
+                    if action == '+' and class_name and class_name not in classes:
                         classes.append(class_name)
-                        print(f"Added class: {class_name}, current classes {classes}")
-                        target_classes = classes if classes and len(classes) > 0 else ['']
-                        model.set_classes(target_classes)
-                elif command.startswith('-'):
-                    class_name = command[1:].strip()
-                    if class_name in classes:
+                        print(f"Added: {class_name}")
+                    elif action == '-' and class_name in classes:
                         classes.remove(class_name)
-                        print(f"Removed class: {class_name}, current classes {classes}")
-                        target_classes = classes if classes and len(classes) > 0 else ['']
-                        model.set_classes(target_classes)
+                        print(f"Removed: {class_name}")
+                    target_classes = classes if classes else ['']
+                    model.set_classes(target_classes)
+                except Exception as e:
+                    print(f"Command Error: {e}")
 
             current_time = time.time()
             time_diff = current_time - self.last_frame_time
@@ -397,11 +398,6 @@ class CameraApp(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
-
-    if torch.cuda.is_available():
-        print("CUDA IS AVAILABLE")
-    else:
-        print("CUDA NOT AVAILABLE")
 
     if not os.path.exists(MODEL_PATH):
         print(f"Error: Model file '{MODEL_PATH}' not found.")
