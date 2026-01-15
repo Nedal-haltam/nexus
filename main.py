@@ -162,7 +162,9 @@ class VideoThread(QThread):
                     self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
                     continue
 
+            updated_classes = False
             while not command_queue.empty():
+                updated_classes = True
                 command = command_queue.get()
                 try:
                     action = command[0]
@@ -173,10 +175,11 @@ class VideoThread(QThread):
                     elif action == '-' and class_name in classes:
                         classes.remove(class_name)
                         print(f"Removed: {class_name}")
-                    target_classes = classes if classes else ['']
-                    model.set_classes(target_classes)
                 except Exception as e:
                     print(f"Command Error: {e}")
+            if updated_classes:
+                target_classes = classes if classes else ['']
+                model.set_classes(target_classes)
 
             current_time = time.time()
             time_diff = current_time - self.last_frame_time
