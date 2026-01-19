@@ -16,7 +16,7 @@ import queue
 WIDTH = 640
 HEIGHT = 480
 DEFAULT_FPS = 30
-DETECTION_SKIP_FRAMES = 30
+# DETECTION_SKIP_FRAMES = 30
 STATUS_CONNECTING_COLOR = "blue"
 STATUS_CONNECTED_COLOR = "green"
 STATUS_DISCONNECTED_COLOR = "orange"
@@ -190,14 +190,15 @@ class VideoThread(QThread):
                 ret, cv_img = self.cap.retrieve()
                 if not ret:
                     continue
-                cv_img = cv2.resize(cv_img, (WIDTH, HEIGHT))
 
-                self.frame_counter += 1
-                if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
-                    results = model.predict(cv_img, verbose=False, device=model.device)
+                # self.frame_counter += 1
+                # if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
+                if True:
+                    results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(320, 256))
                     self.last_results = results[0]
                 
                 final_img = self.draw_detections(cv_img, self.last_results)
+                final_img = cv2.resize(final_img, (WIDTH, HEIGHT))
 
                 p = self.cvimage_to_qimage(final_img)
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
