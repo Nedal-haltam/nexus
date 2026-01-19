@@ -193,12 +193,13 @@ class VideoThread(QThread):
 
                 # self.frame_counter += 1
                 # if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
-                if True:
-                    results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(320, 256))
-                    self.last_results = results[0]
+                # if True:
+                #     results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(320, 256))
+                #     self.last_results = results[0]
                 
-                final_img = self.draw_detections(cv_img, self.last_results)
-                final_img = cv2.resize(final_img, (WIDTH, HEIGHT))
+                # final_img = self.draw_detections(cv_img, self.last_results)
+                # final_img = cv2.resize(final_img, (WIDTH, HEIGHT))
+                final_img = cv2.resize(cv_img, (WIDTH, HEIGHT))
 
                 p = self.cvimage_to_qimage(final_img)
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
