@@ -12,9 +12,12 @@ from ultralytics import YOLO
 import threading
 import torch
 import queue
+import base64
+import importlib
 
-# WIDTH = 640
-# HEIGHT = 480
+sys.path.append('..')
+client = importlib.import_module('client-server.client')
+
 DISPLAY_WIDTH = 640
 DISPLAY_HEIGHT = 480
 INFERENCE_WIDTH = DISPLAY_WIDTH#320
@@ -50,7 +53,8 @@ def detect_objects(frame, model : YOLO, classes : list[str]):
     results = model.predict(frame, verbose=False)
     return results[0].plot()
 
-def input_thread(command_queue):
+def input_thread():
+    global command_queue
     print("Input thread started. Enter +class to add or -class to remove (e.g., +cat, -dog).")
     while True:
         try:
@@ -106,9 +110,13 @@ class VideoThread(QThread):
         # self.frame_counter = 0
         
         self.cap : cv2.VideoCapture = None
-        self.latest_frame = None
-        self.frame_lock = threading.Lock()
         self.capture_thread = None
+        self.latest_frame = None
+        self.latest_frame_lock = threading.Lock()
+
+        self.client_thread = None
+        self.latest_detections = []
+        self.latest_detections_lock = threading.Lock()
 
     def init_video_capture(self) -> bool:
         self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG, [
@@ -151,24 +159,27 @@ class VideoThread(QThread):
 
     def draw_detections(self, frame, results):
         if results is None: return frame
-        
+        with self.latest_detections_lock:
+            self.latest_detections.clear()
+
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             conf = float(box.conf[0])
             cls_id = int(box.cls[0])
 
-            try:
-                label_name = results.names[cls_id]
-            except:
-                label_name = ''
+            try: label_name = results.names[cls_id]
+            except: label_name = ''
             label_text = f"{label_name} {conf:.2f}"
 
+            detected_image = frame[y1:y2, x1:x2]
+            with self.latest_detections_lock:
+                self.latest_detections.append((label_name, conf, detected_image.copy()))
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            # detected_image = frame[y1:y2, x1:x2]
             (w, h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(frame, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
-            cv2.putText(frame, label_text, (x1, y1 - 5), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            cv2.putText(frame, label_text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
         return frame
 
     def capture_worker(self):
@@ -184,7 +195,7 @@ class VideoThread(QThread):
                 self.vt_signal_update_status_label.emit("ReConnecting...", STATUS_CONNECTING_COLOR)
                 self.vt_signal_update_error_label.emit("Stream lost")
                 
-                with self.frame_lock:
+                with self.latest_frame_lock:
                     self.latest_frame = None
 
                 if not AUTO_RECONNECT:
@@ -197,7 +208,7 @@ class VideoThread(QThread):
             
             ret, frame = self.cap.retrieve()
             if ret:
-                with self.frame_lock:
+                with self.latest_frame_lock:
                     self.latest_frame = frame
             
             # time.sleep(0.005) 
@@ -205,12 +216,31 @@ class VideoThread(QThread):
         if self.cap:
             self.cap.release()
 
+    def cmd_in(self, command_text : str):
+        command_queue.put(command_text.strip())
+
+    def img_out(self):
+        rets = []
+        with self.latest_detections_lock:
+            for label_name, conf, img in self.latest_detections:
+                # clear font
+                cv2.putText(img, f"{label_name} {conf:.2f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                _, buffer = cv2.imencode('.jpg', img)
+                img = base64.b64encode(buffer).decode('utf-8')
+                rets.append(img)
+        return rets
+
+    def client_worker(self):
+        client.run_client(self.cmd_in, self.img_out)
+        pass
 
     def run(self):
         global command_queue, classes, model
 
         self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
+        self.client_thread = threading.Thread(target=self.client_worker, daemon=True)
         self.capture_thread.start()
+        self.client_thread.start()
 
         while self._run_flag:
             
@@ -220,7 +250,7 @@ class VideoThread(QThread):
             time_diff = current_time - self.last_frame_time
             if time_diff >= (1.0 / self.target_fps):
                 working_frame = None
-                with self.frame_lock:
+                with self.latest_frame_lock:
                     if self.latest_frame is not None:
                         working_frame = self.latest_frame.copy()
                 if working_frame is None:
@@ -457,8 +487,8 @@ if __name__ == "__main__":
     model = load_model(MODEL_PATH)
     model.set_classes(classes if classes else [''])
 
-    t = threading.Thread(target=input_thread, args=(command_queue,), daemon=True)
-    t.start()
+    # t = threading.Thread(target=input_thread, daemon=True)
+    # t.start()
 
     app = QApplication(sys.argv)
     window = CameraApp()
