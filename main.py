@@ -13,8 +13,13 @@ import threading
 import torch
 import queue
 
-WIDTH = 640
-HEIGHT = 480
+# WIDTH = 640
+# HEIGHT = 480
+DISPLAY_WIDTH = 640
+DISPLAY_HEIGHT = 480
+INFERENCE_WIDTH = DISPLAY_WIDTH#320
+INFERENCE_HEIGHT = DISPLAY_HEIGHT#256
+
 DEFAULT_FPS = 30
 # DETECTION_SKIP_FRAMES = 30
 STATUS_CONNECTING_COLOR = "blue"
@@ -42,7 +47,7 @@ def load_model(model_path):
     return model
 
 def detect_objects(frame, model : YOLO, classes : list[str]):
-    results = model.predict(frame, verbose=False)    
+    results = model.predict(frame, verbose=False)
     return results[0].plot()
 
 def input_thread(command_queue):
@@ -140,7 +145,7 @@ class VideoThread(QThread):
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
         convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-        return convert_to_qt_format.scaled(WIDTH, HEIGHT, Qt.AspectRatioMode.KeepAspectRatio)
+        return convert_to_qt_format.scaled(DISPLAY_WIDTH, DISPLAY_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio)
 
     def incoming_res(self) -> str: return f"{self.incoming_width}x{self.incoming_height}"
 
@@ -223,15 +228,16 @@ class VideoThread(QThread):
                     continue
 
                 self.last_frame_time = current_time
-                cv_img = cv2.resize(working_frame, (WIDTH, HEIGHT))
+                cv_img = working_frame
 
                 # self.frame_counter += 1
                 # if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
                 if True:
-                    results = model.predict(cv_img, verbose=False, device=model.device)
+                    results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(INFERENCE_WIDTH, INFERENCE_HEIGHT))
                     self.last_results = results[0]
                 
                 final_img = self.draw_detections(cv_img, self.last_results)
+                final_img = cv2.resize(final_img, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
 
                 p = self.cvimage_to_qimage(final_img)
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
@@ -275,7 +281,7 @@ class CameraApp(QMainWindow):
         self.video_label = QLabel("Video Stream Disconnected")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("background-color: black; color: white;")
-        self.video_label.setMinimumSize(WIDTH, HEIGHT)
+        self.video_label.setMinimumSize(DISPLAY_WIDTH, DISPLAY_HEIGHT)
         self.main_layout.addWidget(self.video_label, stretch=2)
 
     def _setup_controls_panel(self):
