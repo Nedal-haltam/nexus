@@ -239,11 +239,11 @@ class VideoThread(QThread):
                 final_img = self.draw_detections(cv_img, self.last_results)
                 final_img = cv2.resize(final_img, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
 
-                p = self.cvimage_to_qimage(final_img)
-                self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{p.width()}x{p.height()}")
+                qimage = self.cvimage_to_qimage(final_img)
+                self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{qimage.width()}x{qimage.height()}")
                 actual_fps = 1.0 / time_diff
                 self.vt_signal_update_fps_label.emit(f"{actual_fps:.1f}")
-                self.vt_signal_update_image.emit(p)
+                self.vt_signal_update_image.emit(qimage)
                 self.vt_signal_connection_retain.emit()
             
             if self.capture_thread and not self.capture_thread.is_alive():
