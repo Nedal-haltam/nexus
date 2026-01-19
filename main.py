@@ -33,7 +33,8 @@ command_queue : queue.Queue = queue.Queue()
 
 def load_model(model_path):
     print("Loading model...")
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    device = 'cpu'
     print(f"Using device: {device}")
     
     model = YOLO(model_path)
@@ -402,6 +403,9 @@ class CameraApp(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
+
+    cv2.setNumThreads(cv2.getNumberOfCPUs())
+    cv2.setUseOptimized(True)
 
     if not os.path.exists(MODEL_PATH):
         print(f"Error: Model file '{MODEL_PATH}' not found.")
