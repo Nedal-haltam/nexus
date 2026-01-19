@@ -16,7 +16,7 @@ import queue
 WIDTH = 640
 HEIGHT = 480
 DEFAULT_FPS = 30
-DETECTION_SKIP_FRAMES = 30
+# DETECTION_SKIP_FRAMES = 30
 STATUS_CONNECTING_COLOR = "blue"
 STATUS_CONNECTED_COLOR = "green"
 STATUS_DISCONNECTED_COLOR = "orange"
@@ -56,6 +56,26 @@ def input_thread(command_queue):
         except Exception as e:
             pass
 
+def update_model_classes():
+    global command_queue, classes, model
+    updated_classes = False
+    while not command_queue.empty():
+        updated_classes = True
+        command = command_queue.get()
+        try:
+            action = command[0]
+            class_name = command[1:].strip()
+            if action == '+' and class_name and class_name not in classes:
+                classes.append(class_name)
+            elif action == '-' and class_name in classes:
+                classes.remove(class_name)
+            print(f"Updated classes: {classes}")
+        except Exception as e:
+            print(f"Command Error: {e}")
+    if updated_classes:
+        target_classes = classes if classes else ['']
+        model.set_classes(target_classes)
+
 class VideoThread(QThread):
     vt_signal_update_image = Signal(QImage)
     vt_signal_update_fps_label = Signal(str)
@@ -68,8 +88,7 @@ class VideoThread(QThread):
 
     vt_signal_connection_failed = Signal(str)
     vt_signal_connection_retain = Signal()
-    cap : cv2.VideoCapture = None
-
+    
     def __init__(self):
         super().__init__()
         self._run_flag = True
@@ -79,7 +98,12 @@ class VideoThread(QThread):
         self.incoming_width = 0
         self.incoming_height = 0
         self.last_results = None
-        self.frame_counter = 0
+        # self.frame_counter = 0
+        
+        self.cap : cv2.VideoCapture = None
+        self.latest_frame = None
+        self.frame_lock = threading.Lock()
+        self.capture_thread = None
 
     def init_video_capture(self) -> bool:
         self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG, [
@@ -87,6 +111,8 @@ class VideoThread(QThread):
         ])
         if not self.cap.isOpened():
             return False
+
+        # self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.incoming_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.incoming_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         return True
@@ -133,15 +159,14 @@ class VideoThread(QThread):
             label_text = f"{label_name} {conf:.2f}"
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # detected_image = frame[y1:y2, x1:x2]
             (w, h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
             cv2.rectangle(frame, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
             cv2.putText(frame, label_text, (x1, y1 - 5), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
         return frame
 
-    def run(self):
-        global command_queue, classes, model
-
+    def capture_worker(self):
         self.vt_signal_update_status_label.emit("Connecting...", STATUS_CONNECTING_COLOR)
         if not self.connect_to_camera():
             self.vt_signal_update_status_label.emit("Disconnected", STATUS_DISCONNECTED_COLOR)
@@ -149,13 +174,14 @@ class VideoThread(QThread):
             return
         self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
 
-        self.incoming_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.incoming_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
         while self._run_flag:
             if not self.cap.isOpened() or not self.cap.grab():
                 self.vt_signal_update_status_label.emit("ReConnecting...", STATUS_CONNECTING_COLOR)
                 self.vt_signal_update_error_label.emit("Stream lost")
+                
+                with self.frame_lock:
+                    self.latest_frame = None
+
                 if not AUTO_RECONNECT:
                     break
                 else:
@@ -163,37 +189,45 @@ class VideoThread(QThread):
                         break
                     self.vt_signal_update_status_label.emit("Connected", STATUS_CONNECTED_COLOR)
                     continue
+            
+            ret, frame = self.cap.retrieve()
+            if ret:
+                with self.frame_lock:
+                    self.latest_frame = frame
+            
+            # time.sleep(0.005) 
 
-            updated_classes = False
-            while not command_queue.empty():
-                updated_classes = True
-                command = command_queue.get()
-                try:
-                    action = command[0]
-                    class_name = command[1:].strip()
-                    if action == '+' and class_name and class_name not in classes:
-                        classes.append(class_name)
-                        print(f"Added: {class_name}")
-                    elif action == '-' and class_name in classes:
-                        classes.remove(class_name)
-                        print(f"Removed: {class_name}")
-                except Exception as e:
-                    print(f"Command Error: {e}")
-            if updated_classes:
-                target_classes = classes if classes else ['']
-                model.set_classes(target_classes)
+        if self.cap:
+            self.cap.release()
+
+
+    def run(self):
+        global command_queue, classes, model
+
+        self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
+        self.capture_thread.start()
+
+        while self._run_flag:
+            
+            update_model_classes()
 
             current_time = time.time()
             time_diff = current_time - self.last_frame_time
             if time_diff >= (1.0 / self.target_fps):
-                self.last_frame_time = current_time
-                ret, cv_img = self.cap.retrieve()
-                if not ret:
+                working_frame = None
+                with self.frame_lock:
+                    if self.latest_frame is not None:
+                        working_frame = self.latest_frame.copy()
+                if working_frame is None:
+                    time.sleep(0.01)
                     continue
-                cv_img = cv2.resize(cv_img, (WIDTH, HEIGHT))
 
-                self.frame_counter += 1
-                if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
+                self.last_frame_time = current_time
+                cv_img = cv2.resize(working_frame, (WIDTH, HEIGHT))
+
+                # self.frame_counter += 1
+                # if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
+                if True:
                     results = model.predict(cv_img, verbose=False, device=model.device)
                     self.last_results = results[0]
                 
@@ -204,11 +238,15 @@ class VideoThread(QThread):
                 actual_fps = 1.0 / time_diff
                 self.vt_signal_update_fps_label.emit(f"{actual_fps:.1f}")
                 self.vt_signal_update_image.emit(p)
+                self.vt_signal_connection_retain.emit()
+            
+            if self.capture_thread and not self.capture_thread.is_alive():
+                break
 
-            self.vt_signal_connection_retain.emit()
+        if self.capture_thread.is_alive():
+            self.capture_thread.join(timeout=1.0)
         
         self.vt_signal_reset_ui_state.emit()
-        self.cap.release()
 
     def stop(self):
         self._run_flag = False
@@ -276,7 +314,7 @@ class CameraApp(QMainWindow):
         fps_layout.setContentsMargins(0, 0, 0, 0)
         
         self.fps_input = QLineEdit()
-        self.fps_input.setValidator(QIntValidator(1, 60))
+        # self.fps_input.setValidator(QIntValidator(1, 60))
         self.fps_input.setText(f'{DEFAULT_FPS}')
         
         self.fps_btn = QPushButton("Update")
@@ -404,7 +442,7 @@ class CameraApp(QMainWindow):
 
 if __name__ == "__main__":
 
-    cv2.setNumThreads(cv2.getNumberOfCPUs())
+    cv2.setNumThreads(8)
     cv2.setUseOptimized(True)
 
     if not os.path.exists(MODEL_PATH):
