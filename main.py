@@ -3,7 +3,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QGroupBox, QFormLayout)
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtGui import QImage, QPixmap, QIntValidator
-
 import sys
 import cv2
 import time
@@ -13,10 +12,8 @@ import threading
 import torch
 import queue
 import base64
-import importlib
+import client
 
-sys.path.append('..')
-client = importlib.import_module('client-server.client')
 
 DISPLAY_WIDTH = 640
 DISPLAY_HEIGHT = 480
