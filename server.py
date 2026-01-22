@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox)
+                               QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox, QListWidgetItem)
 from PySide6.QtCore import Qt, Signal, QObject, Slot
 from PySide6.QtGui import QImage, QPixmap, QTextCursor
 
@@ -251,12 +251,10 @@ class ServerGUI(QMainWindow):
     def show_client_history(self, item):
         client_id = item.text()
         history = self.server.client_history.get(client_id, [])
-        
         if not history:
             info_text = "No queries have been sent to this client yet."
         else:
             info_text = "\n".join(history)
-            
         QMessageBox.information(self, f"History: {client_id}", info_text)
 
     @Slot(str)
@@ -272,7 +270,9 @@ class ServerGUI(QMainWindow):
 
     @Slot(str, object)
     def add_client_to_list(self, ip_id, sock):
-        self.list_clients.addItem(ip_id)
+        item = QListWidgetItem(ip_id)
+        item.setCheckState(Qt.Unchecked) 
+        self.list_clients.addItem(item)
 
     @Slot(str)
     def remove_client_from_list(self, ip_id):
@@ -281,23 +281,36 @@ class ServerGUI(QMainWindow):
             self.list_clients.takeItem(self.list_clients.row(item))
 
     def remove_client(self):
-        current_item = self.list_clients.currentItem()
-        if current_item:
-            ip_id = current_item.text()
+        checked_clients = []
+        for index in range(self.list_clients.count()):
+            item = self.list_clients.item(index)
+            if item.checkState() == Qt.Checked:
+                checked_clients.append(item.text())
+
+        if not checked_clients:
+             QMessageBox.warning(self, "Warning", "Check clients to remove.")
+             return
+
+        for ip_id in checked_clients:
             if ip_id in self.server.clients:
                 try: self.server.clients[ip_id].close()
                 except: pass
-        else:
-             QMessageBox.warning(self, "Warning", "Select a connected client to remove.")
 
     def on_send_clicked(self):
-        current = self.list_clients.currentItem()
-        if not current:
-            QMessageBox.warning(self, "Warning", "Select a client first")
+        checked_clients = []
+        for index in range(self.list_clients.count()):
+            item = self.list_clients.item(index)
+            if item.checkState() == Qt.Checked:
+                checked_clients.append(item.text())
+
+        if not checked_clients:
+            QMessageBox.warning(self, "Warning", "Check at least one client to send to.")
             return
+
         cmd = self.txt_query.text()
         if cmd:
-            self.server.send_command(current.text(), cmd)
+            for ip in checked_clients:
+                self.server.send_command(ip, cmd)
         self.txt_query.clear()
 
     def on_broadcast_clicked(self):
