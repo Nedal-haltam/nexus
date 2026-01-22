@@ -33,9 +33,13 @@ class ClientListWidget(QWidget):
         self.label = QLabel(text)
         self.label.setStyleSheet("font-weight: bold;")
 
+        self.mute_label = QLabel("🔊")
+        self.mute_label.setFixedWidth(25)
+
         layout.addWidget(self.checkbox)
         layout.addWidget(self.label)
         layout.addWidget(self.led)
+        layout.addWidget(self.mute_label)
         layout.addStretch()
 
         # self.timer = QTimer()
@@ -45,6 +49,10 @@ class ClientListWidget(QWidget):
 
         self.last_beep_time = 0
         self.muted = False
+
+    def set_muted(self, state):
+        self.muted = state
+        self.mute_label.setText("🔇" if self.muted else "🔊")
 
     def flash(self):
         """Turns the LED Green, then starts timer to turn it off."""
@@ -332,7 +340,7 @@ class ServerGUI(QMainWindow):
             action_turn_off_led = menu.addAction("Turn Off LED")
             action_turn_off_led.triggered.connect(lambda: self.turn_off_client_led(item))
 
-            action_toggle_sound = menu.addAction("Toggle Notify Sound")
+            action_toggle_sound = menu.addAction("Toggle Sound (mute/unmute)")
             action_toggle_sound.triggered.connect(lambda: self.toggle_client_notify_sound(item))
 
             menu.exec(self.list_clients.mapToGlobal(pos))
@@ -358,10 +366,7 @@ class ServerGUI(QMainWindow):
 
     def toggle_client_notify_sound(self, item):
         widget = self.list_clients.itemWidget(item)
-        if widget:
-            widget.muted = not widget.muted
-            status = "muted" if widget.muted else "unmuted"
-            self.log(f"Notification sound for {item.text()} is now {status}.")
+        if widget: widget.set_muted(not widget.muted)
 
     @Slot(str)
     def log(self, msg):
