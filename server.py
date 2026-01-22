@@ -10,7 +10,10 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox)
 from PySide6.QtCore import Qt, Signal, QObject, Slot
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QTextCursor
+
+MAX_LOG_SIZE = 1024
+DELETE_LOG_SIZE = 512
 
 def send_json(sock, data_dict):
     try:
@@ -228,7 +231,13 @@ class ServerGUI(QMainWindow):
     @Slot(str)
     def log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.txt_log.append(f"[{ts}] {msg}")
+        if self.txt_log.document().blockCount() >= MAX_LOG_SIZE:
+            cursor = self.txt_log.textCursor()
+            cursor.movePosition(QTextCursor.Start)
+            for _ in range(DELETE_LOG_SIZE):
+                cursor.movePosition(QTextCursor.NextBlock, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+        self.txt_log.append(f"[{ts}] {msg}")    
 
     @Slot(str, object)
     def add_client_to_list(self, ip_id, sock):
