@@ -48,6 +48,7 @@ class ServerSignals(QObject):
     client_connected = Signal(str, object)
     client_disconnected = Signal(str)
     image_received = Signal(str, str, str, str)
+    request_access = Signal(str, object)
 
 class NetworkServer(QObject):
     def __init__(self, port=5000):
@@ -58,6 +59,7 @@ class NetworkServer(QObject):
         self.signals = ServerSignals()
         self.clients = {}
         self.client_history = {}
+        self.allow_connection = False
 
     def start_server(self):
         self.running = True
@@ -73,13 +75,24 @@ class NetworkServer(QObject):
             while self.running:
                 client_sock, addr = self.server_socket.accept()
                 ip_id = f"{addr[0]}:{addr[1]}"
-                
+
+                self.allow_connection = False
+                wait_event = threading.Event()
+                self.signals.request_access.emit(ip_id, wait_event)
+                wait_event.wait()
+
+                if not self.allow_connection:
+                    self.signals.log.emit(f"Rejected connection from {ip_id}")
+                    client_sock.close()
+                    continue
+
                 self.clients[ip_id] = client_sock
                 self.client_history[ip_id] = []
                 self.signals.client_connected.emit(ip_id, client_sock)
                 self.signals.log.emit(f"New connection: {ip_id}")
-                
+
                 threading.Thread(target=self._handle_client, args=(client_sock, ip_id), daemon=True).start()
+
         except Exception as e:
             self.signals.log.emit(f"Server Error: {e}")
 
@@ -167,7 +180,6 @@ class ServerGUI(QMainWindow):
         grp_clients = QGroupBox("Client Management")
         client_layout = QVBoxLayout()
         self.list_clients = QListWidget()
-        # self.list_clients.setToolTip("Double-click a client to see sent query history")
 
         self.list_clients.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_clients.customContextMenuRequested.connect(self.show_context_menu)
@@ -238,13 +250,22 @@ class ServerGUI(QMainWindow):
         btn_unselect_all.clicked.connect(self.on_unselect_all_clicked)
         remove_selected_btn.clicked.connect(self.remove_client)
 
-        # self.list_clients.itemDoubleClicked.connect(self.show_client_history)
-
     def connect_signals(self):
         self.server.signals.log.connect(self.log)
         self.server.signals.client_connected.connect(self.add_client_to_list)
         self.server.signals.client_disconnected.connect(self.remove_client_from_list)
         self.server.signals.image_received.connect(self.update_display)
+        self.server.signals.request_access.connect(self.handle_request_access)
+
+    @Slot(str, object)
+    def handle_request_access(self, ip_id, wait_event):
+        try:
+            reply = QMessageBox.question(self, "New Client Connection",
+                                        f"Accept connection from {ip_id}?",
+                                        QMessageBox.Yes | QMessageBox.No)
+            self.server.allow_connection = (reply == QMessageBox.Yes)
+        finally:
+            wait_event.set()
 
     def show_context_menu(self, pos):
         item = self.list_clients.itemAt(pos)
