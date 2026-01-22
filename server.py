@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox, QListWidgetItem)
+                               QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox, QListWidgetItem, QMenu)
 from PySide6.QtCore import Qt, Signal, QObject, Slot
 from PySide6.QtGui import QImage, QPixmap, QTextCursor
 
@@ -174,8 +174,10 @@ class ServerGUI(QMainWindow):
         grp_clients = QGroupBox("Client Management")
         client_layout = QVBoxLayout()
         self.list_clients = QListWidget()
+        # self.list_clients.setToolTip("Double-click a client to see sent query history")
 
-        self.list_clients.setToolTip("Double-click a client to see sent query history")
+        self.list_clients.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.list_clients.customContextMenuRequested.connect(self.show_context_menu)
 
         remove_selected_btn = QPushButton("Remove Selected")
         remove_selected_btn.setStyleSheet("background-color: #ffcccc; color: darkred;")
@@ -240,13 +242,32 @@ class ServerGUI(QMainWindow):
         btn_broadcast.clicked.connect(self.on_broadcast_clicked)
         remove_selected_btn.clicked.connect(self.remove_client)
 
-        self.list_clients.itemDoubleClicked.connect(self.show_client_history)
+        # self.list_clients.itemDoubleClicked.connect(self.show_client_history)
 
     def connect_signals(self):
         self.server.signals.log.connect(self.log)
         self.server.signals.client_connected.connect(self.add_client_to_list)
         self.server.signals.client_disconnected.connect(self.remove_client_from_list)
         self.server.signals.image_received.connect(self.update_display)
+
+    def show_context_menu(self, pos):
+        item = self.list_clients.itemAt(pos)
+        if item:
+            menu = QMenu(self)
+            
+            action_history = menu.addAction("View Query History")
+            action_history.triggered.connect(lambda: self.show_client_history(item))
+            
+            action_toggle = menu.addAction("Toggle Selection")
+            action_toggle.triggered.connect(lambda: self.toggle_check_state(item))
+
+            menu.exec(self.list_clients.mapToGlobal(pos))
+
+    def toggle_check_state(self, item):
+        if item.checkState() == Qt.Checked:
+            item.setCheckState(Qt.Unchecked)
+        else:
+            item.setCheckState(Qt.Checked)
 
     def show_client_history(self, item):
         client_id = item.text()
