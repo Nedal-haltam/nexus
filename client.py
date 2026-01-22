@@ -73,7 +73,7 @@ def connect_to_server(server_ip, server_port):
     print(f"Attempting connection to {server_ip}:{server_port}...")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(C2S_CONNECTION_TIMEOUT)
-    sock.connect((server_ip, server_port))
+    sock.connect((server_ip, int(server_port)))
     sock.settimeout(CLIENT_RECEIVE_TIMEOUT)
     print(f"Connected to Server!")
     return sock
@@ -83,9 +83,9 @@ def stop_client():
     stop_event.set()
 
 def run_client(server_ip, server_port, cmd_handler_callback, img_getter_callback):
-    stop_event.clear()
-    sock : socket.socket = connect_to_server(server_ip, server_port)
     try:
+        stop_event.clear()
+        sock : socket.socket = connect_to_server(server_ip, server_port)
         last_img_time = 0
         while not stop_event.is_set():
             current_time = time.time()
