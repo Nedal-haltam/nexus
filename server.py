@@ -6,7 +6,6 @@ import threading
 import os
 import base64
 from datetime import datetime
-
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                                QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox)
@@ -55,7 +54,6 @@ class NetworkServer(QObject):
         self.server_socket = None
         self.signals = ServerSignals()
         self.clients = {}
-        self.blacklist = set()
 
     def start_server(self):
         self.running = True
@@ -70,14 +68,8 @@ class NetworkServer(QObject):
 
             while self.running:
                 client_sock, addr = self.server_socket.accept()
-                ip_only = addr[0]
                 ip_id = f"{addr[0]}:{addr[1]}"
                 
-                if ip_only in self.blacklist:
-                    self.signals.log.emit(f"Blocked connection attempt from blacklisted IP: {ip_only}")
-                    client_sock.close()
-                    continue
-
                 self.clients[ip_id] = client_sock
                 self.signals.client_connected.emit(ip_id, client_sock)
                 self.signals.log.emit(f"New connection: {ip_id}")
@@ -143,15 +135,6 @@ class NetworkServer(QObject):
         else:
             self.signals.log.emit(f"Target {target_ip} not found.")
 
-    def add_to_blacklist(self, ip):
-        self.blacklist.add(ip)
-        self.signals.log.emit(f"IP added to blacklist: {ip}")
-
-    def remove_from_blacklist(self, ip):
-        if ip in self.blacklist:
-            self.blacklist.remove(ip)
-            self.signals.log.emit(f"IP removed from blacklist: {ip}")
-
 class ServerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -173,21 +156,13 @@ class ServerGUI(QMainWindow):
         grp_clients = QGroupBox("Client Management")
         client_layout = QVBoxLayout()
         self.list_clients = QListWidget()
-        btn_ban = QPushButton("Ban & Remove Selected")
-        btn_ban.setStyleSheet("background-color: #ffcccc; color: darkred;")
+        remove_selected_btn = QPushButton("Remove Selected")
+        remove_selected_btn.setStyleSheet("background-color: #ffcccc; color: darkred;")
         client_layout.addWidget(QLabel("Connected Clients:"))
         client_layout.addWidget(self.list_clients)
-        client_layout.addWidget(btn_ban)
+        client_layout.addWidget(remove_selected_btn)
         grp_clients.setLayout(client_layout)
-        
-        grp_blacklist = QGroupBox("Blacklist Management")
-        blacklist_layout = QVBoxLayout()
-        self.list_blacklist = QListWidget()
-        btn_unban = QPushButton("Unban Selected")
-        blacklist_layout.addWidget(self.list_blacklist)
-        blacklist_layout.addWidget(btn_unban)
-        grp_blacklist.setLayout(blacklist_layout)
-        
+                
         grp_query = QGroupBox("Query Panel")
         query_layout = QVBoxLayout()
         self.txt_query = QLineEdit()
@@ -207,7 +182,6 @@ class ServerGUI(QMainWindow):
         grp_log.setLayout(log_layout)
 
         left_layout.addWidget(grp_clients)
-        left_layout.addWidget(grp_blacklist)
         left_layout.addWidget(grp_query)
         left_layout.addWidget(grp_log)
         
@@ -243,8 +217,7 @@ class ServerGUI(QMainWindow):
         
         btn_send.clicked.connect(self.on_send_clicked)
         btn_broadcast.clicked.connect(self.on_broadcast_clicked)
-        btn_ban.clicked.connect(self.ban_client)
-        btn_unban.clicked.connect(self.unban_client)
+        remove_selected_btn.clicked.connect(self.remove_client)
 
     def connect_signals(self):
         self.server.signals.log.connect(self.log)
@@ -267,33 +240,15 @@ class ServerGUI(QMainWindow):
         for item in items:
             self.list_clients.takeItem(self.list_clients.row(item))
 
-    def ban_client(self):
+    def remove_client(self):
         current_item = self.list_clients.currentItem()
         if current_item:
             ip_id = current_item.text()
-            ip_only = ip_id.split(':')[0]
-            
-            self.server.add_to_blacklist(ip_only)
-            
-            if not self.list_blacklist.findItems(ip_only, Qt.MatchExactly):
-                self.list_blacklist.addItem(ip_only)
-
             if ip_id in self.server.clients:
-                try:
-                    self.server.clients[ip_id].close()
-                except:
-                    pass
+                try: self.server.clients[ip_id].close()
+                except: pass
         else:
-             QMessageBox.warning(self, "Warning", "Select a connected client to ban.")
-
-    def unban_client(self):
-        current_item = self.list_blacklist.currentItem()
-        if current_item:
-            ip_only = current_item.text()
-            self.server.remove_from_blacklist(ip_only)
-            self.list_blacklist.takeItem(self.list_blacklist.row(current_item))
-        else:
-             QMessageBox.warning(self, "Warning", "Select a blacklisted IP to unban.")
+             QMessageBox.warning(self, "Warning", "Select a connected client to remove.")
 
     def on_send_clicked(self):
         current = self.list_clients.currentItem()
