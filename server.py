@@ -166,7 +166,7 @@ class ServerGUI(QMainWindow):
         grp_query = QGroupBox("Query Panel")
         query_layout = QVBoxLayout()
         self.txt_query = QLineEdit()
-        self.txt_query.setPlaceholderText("Enter Command (e.g., GET_FRAME)")
+        self.txt_query.setPlaceholderText("Enter Command Here...")
         btn_send = QPushButton("Send to Selected")
         btn_broadcast = QPushButton("Broadcast All")
         query_layout.addWidget(self.txt_query)
@@ -258,6 +258,7 @@ class ServerGUI(QMainWindow):
         cmd = self.txt_query.text()
         if cmd:
             self.server.send_command(current.text(), cmd)
+        self.txt_query.clear()
 
     def on_broadcast_clicked(self):
         cmd = self.txt_query.text()
