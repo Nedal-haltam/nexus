@@ -100,7 +100,8 @@ class NetworkServer(QObject):
         except Exception as e:
             self.signals.log.emit(f"Client {ip_id} error: {e}")
         finally:
-            conn.close()
+            try: conn.close()
+            except: pass
             if ip_id in self.clients: del self.clients[ip_id]
             if ip_id in self.client_history: del self.client_history[ip_id]
             self.signals.client_disconnected.emit(ip_id)
@@ -307,10 +308,17 @@ class ServerGUI(QMainWindow):
              QMessageBox.warning(self, "Warning", "Check clients to remove.")
              return
 
-        for ip_id in checked_clients:
-            if ip_id in self.server.clients:
-                try: self.server.clients[ip_id].close()
-                except: pass
+        reply = QMessageBox.question(self, "Confirm Removal",
+                                     f"Are you sure you want to remove the selected clients?\n{', '.join(checked_clients)}",
+                                     QMessageBox.Yes | QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            for ip_id in checked_clients:
+                if ip_id in self.server.clients:
+                    try: self.server.clients[ip_id].close()
+                    except: pass
+        elif reply == QMessageBox.No:
+            return
 
     def on_send_clicked(self):
         checked_clients = []
