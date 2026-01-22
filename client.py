@@ -8,10 +8,7 @@ import sys
 import cv2
 import numpy as np
 from datetime import datetime
-
-SERVER_IP = '127.0.0.1'
-SERVER_PORT = 5000
-DEVICE_IP = '192.168.1.101'
+from consts import *
 
 def send_json(sock, data_dict):
     try:
@@ -24,7 +21,7 @@ def send_json(sock, data_dict):
         return False
 
 def recv_json(sock):
-    header = recv_all(sock, 4)
+    header = recv_all(sock, CS_JSON_PROTOCOL_HEADER_SIZE)
     if not header: return None
     payload = recv_all(sock, struct.unpack('>I', header)[0])
     return json.loads(payload) if payload else None
@@ -44,7 +41,7 @@ def generate_image(text_overlay):
     cv2.rectangle(img, (100, 100), (540, 380), color, -1)
     
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(img, f"Client: {DEVICE_IP}", (10, 50), font, 1, (255, 255, 255), 2)
+    cv2.putText(img, f"Client: {CLIENT_DEVICE_IP}", (10, 50), font, 1, (255, 255, 255), 2)
     cv2.putText(img, f"Cmd: {text_overlay}", (10, 100), font, 1, (255, 255, 255), 2)
     cv2.putText(img, f"Time: {datetime.now()}", (10, 450), font, 0.7, (200, 200, 200), 1)
     
@@ -64,7 +61,7 @@ def foo_img():
 def send_image(img, sock):
     response = {
         "type": "response",
-        "client_ip": DEVICE_IP,
+        "client_ip": CLIENT_DEVICE_IP,
         "timestamp": datetime.now().strftime("%Y-%m-%d_%H:%M:%S_%f"),
         "image": img
     }
@@ -72,12 +69,12 @@ def send_image(img, sock):
     # print("Response sent successfully.")
     return True
 
-def connect_to_server():
-    print(f"Attempting connection to {SERVER_IP}:{SERVER_PORT}...")
+def connect_to_server(server_ip, server_port):
+    print(f"Attempting connection to {server_ip}:{server_port}...")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(5)
-    sock.connect((SERVER_IP, SERVER_PORT))
-    sock.settimeout(0.5)
+    sock.settimeout(C2S_CONNECTION_TIMEOUT)
+    sock.connect((server_ip, server_port))
+    sock.settimeout(CLIENT_RECEIVE_TIMEOUT)
     print(f"Connected to Server!")
     return sock
 
@@ -85,14 +82,14 @@ stop_event = threading.Event()
 def stop_client():
     stop_event.set()
 
-def run_client(cmd_handler_callback, img_getter_callback):
+def run_client(server_ip, server_port, cmd_handler_callback, img_getter_callback):
     stop_event.clear()
-    sock : socket.socket = connect_to_server()
+    sock : socket.socket = connect_to_server(server_ip, server_port)
     try:
         last_img_time = 0
         while not stop_event.is_set():
             current_time = time.time()
-            if current_time - last_img_time >= 1:
+            if current_time - last_img_time >= CLIENT_SEND_MESSAGE_INTERVAL:
                 imgs = img_getter_callback()
                 for img in imgs:
                     if not send_image(img, sock): return

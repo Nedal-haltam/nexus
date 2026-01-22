@@ -11,9 +11,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox, QListWidgetItem, QMenu)
 from PySide6.QtCore import Qt, Signal, QObject, Slot
 from PySide6.QtGui import QImage, QPixmap, QTextCursor
-
-MAX_LOG_SIZE = 1024
-DELETE_LOG_SIZE = 512
+from consts import *
 
 def send_json(sock, data_dict):
     try:
@@ -25,7 +23,7 @@ def send_json(sock, data_dict):
 
 def recv_json(sock):
     try:
-        raw_len = recv_all(sock, 4)
+        raw_len = recv_all(sock, CS_JSON_PROTOCOL_HEADER_SIZE)
         if not raw_len: return None
         msg_len = struct.unpack('>I', raw_len)[0]
         
@@ -51,7 +49,7 @@ class ServerSignals(QObject):
     request_access = Signal(str, object)
 
 class NetworkServer(QObject):
-    def __init__(self, port=5000):
+    def __init__(self, port=SERVER_PORT):
         super().__init__()
         self.port = port
         self.running = False
@@ -69,7 +67,7 @@ class NetworkServer(QObject):
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.bind(('0.0.0.0', self.port))
-            self.server_socket.listen(10)
+            self.server_socket.listen(SERVER_BACKLOG)
             self.signals.log.emit(f"Server listening on port {self.port}")
 
             while self.running:
@@ -143,7 +141,7 @@ class NetworkServer(QObject):
 
         self.client_history[client_id].append(entry)
 
-        if len(self.client_history[client_id]) > 10:
+        if len(self.client_history[client_id]) > SENT_COMMAND_HISTORY_SIZE_LIMIT:
             self.client_history[client_id].pop(0)
 
     def send_command(self, target_ip, command):
@@ -298,10 +296,10 @@ class ServerGUI(QMainWindow):
     @Slot(str)
     def log(self, msg):
         ts = datetime.now().strftime("%H:%M:%S")
-        if self.txt_log.document().blockCount() >= MAX_LOG_SIZE:
+        if self.txt_log.document().blockCount() >= SERVER_SYS_LOG_MAX_SIZE:
             cursor = self.txt_log.textCursor()
             cursor.movePosition(QTextCursor.Start)
-            for _ in range(DELETE_LOG_SIZE):
+            for _ in range(SERVER_SYS_LOG_DELETE_LOG_SIZE):
                 cursor.movePosition(QTextCursor.NextBlock, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
         self.txt_log.append(f"[{ts}] {msg}")    

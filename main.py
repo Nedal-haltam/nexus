@@ -13,24 +13,7 @@ import torch
 import queue
 import base64
 import client
-
-
-DISPLAY_WIDTH = 640
-DISPLAY_HEIGHT = 480
-INFERENCE_WIDTH = DISPLAY_WIDTH#320
-INFERENCE_HEIGHT = DISPLAY_HEIGHT#256
-
-DEFAULT_FPS = 30
-# DETECTION_SKIP_FRAMES = 30
-STATUS_CONNECTING_COLOR = "blue"
-STATUS_CONNECTED_COLOR = "green"
-STATUS_DISCONNECTED_COLOR = "orange"
-STATUS_ERROR_COLOR = "red"
-AUTO_RECONNECT = True
-
-MODEL_PATH = "./models/yolov8s-world.pt"
-# MODEL_PATH = "./models/yolov8s-worldv2.pt"
-# MODEL_PATH = "./models/yolov8m-worldv2.pt"
+from consts import *
 
 model : YOLO = None
 classes : list[str] = []
@@ -41,7 +24,7 @@ latest_detections_lock = threading.Lock()
 def load_model(model_path):
     print("Loading model...")
     # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    device = 'cpu'
+    device = INFERENCE_DEVICE
     print(f"Using device: {device}")
     
     model = YOLO(model_path)
@@ -101,7 +84,7 @@ class VideoThread(QThread):
         super().__init__()
         self._run_flag = True
         self.rtsp_url = ""
-        self.target_fps = DEFAULT_FPS
+        self.target_fps = NEXUS_DEFAULT_FPS
         self.last_frame_time = 0
         self.incoming_width = 0
         self.incoming_height = 0
@@ -115,7 +98,7 @@ class VideoThread(QThread):
 
     def init_video_capture(self) -> bool:
         self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG, [
-            cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000
+            cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, VIDEO_CAPTURE_TIMEOUT_MS,
         ])
         if not self.cap.isOpened():
             return False
@@ -132,9 +115,9 @@ class VideoThread(QThread):
             self.vt_signal_enable_connect_button.emit()
             if ret:
                 return True
-            for _ in range(20):
+            for _ in range(POST_CAMERA_RECONNECT_WAIT_ITERATIONS):
                 if not self._run_flag: return False
-                time.sleep(0.1)
+                time.sleep(POST_CAMERA_RECONNECT_WAIT_INTERVAL)
         return False
     
     def connect_to_camera(self) -> bool:
@@ -148,7 +131,7 @@ class VideoThread(QThread):
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
         convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-        return convert_to_qt_format.scaled(DISPLAY_WIDTH, DISPLAY_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio)
+        return convert_to_qt_format.scaled(NEXUS_DISPLAY_WIDTH, NEXUS_DISPLAY_HEIGHT, Qt.AspectRatioMode.KeepAspectRatio)
 
     def incoming_res(self) -> str: return f"{self.incoming_width}x{self.incoming_height}"
 
@@ -193,7 +176,7 @@ class VideoThread(QThread):
                 with self.latest_frame_lock:
                     self.latest_frame = None
 
-                if not AUTO_RECONNECT:
+                if not NEXUS_CAMERA_AUTO_RECONNECT:
                     break
                 else:
                     if not self.reconnect_to_camera():
@@ -238,11 +221,11 @@ class VideoThread(QThread):
                 # self.frame_counter += 1
                 # if self.frame_counter % DETECTION_SKIP_FRAMES == 0:
                 if True:
-                    results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(INFERENCE_WIDTH, INFERENCE_HEIGHT))
+                    results = model.predict(cv_img, verbose=False, device=model.device, imgsz=(NEXUS_INFERENCE_WIDTH, NEXUS_INFERENCE_HEIGHT))
                     self.last_results = results[0]
                 
                 final_img = self.draw_detections(cv_img, self.last_results)
-                final_img = cv2.resize(final_img, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
+                final_img = cv2.resize(final_img, (NEXUS_DISPLAY_WIDTH, NEXUS_DISPLAY_HEIGHT))
 
                 qimage = self.cvimage_to_qimage(final_img)
                 self.vt_signal_update_resolution_label.emit(self.incoming_res(), f"{qimage.width()}x{qimage.height()}")
@@ -266,7 +249,7 @@ class VideoThread(QThread):
 class CameraApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.fps = DEFAULT_FPS
+        self.fps = NEXUS_DEFAULT_FPS
         self.setWindowTitle("IP Camera Viewer - Nexus")
         self.setGeometry(100, 100, 950, 650)
 
@@ -288,7 +271,7 @@ class CameraApp(QMainWindow):
         self.video_label = QLabel("Video Stream Disconnected")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("background-color: black; color: white;")
-        self.video_label.setMinimumSize(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+        self.video_label.setMinimumSize(NEXUS_DISPLAY_WIDTH, NEXUS_DISPLAY_HEIGHT)
         self.main_layout.addWidget(self.video_label, stretch=2)
 
     def _setup_controls_panel(self):
@@ -330,7 +313,7 @@ class CameraApp(QMainWindow):
         self.server_connect_btn = QPushButton("Connect")
         self.server_connect_btn.clicked.connect(self.server_toggle_connection)
         
-        layout.addRow("Camera IP/URL:", self.server_ip_input)
+        layout.addRow("Server IP:", self.server_ip_input)
         layout.addRow(self.server_connect_btn)
         group.setLayout(layout)
         self.controls_layout.addWidget(group)
@@ -344,7 +327,7 @@ class CameraApp(QMainWindow):
         
         self.fps_input = QLineEdit()
         # self.fps_input.setValidator(QIntValidator(1, 60))
-        self.fps_input.setText(f'{DEFAULT_FPS}')
+        self.fps_input.setText(f'{NEXUS_DEFAULT_FPS}')
         
         self.fps_btn = QPushButton("Update")
         self.fps_btn.clicked.connect(self.update_fps)
@@ -408,7 +391,7 @@ class CameraApp(QMainWindow):
         
         self.current_vt = VideoThread()
         self.current_vt.rtsp_url = rtsp_input
-        self.current_vt.target_fps = int(self.fps) if self.fps else DEFAULT_FPS
+        self.current_vt.target_fps = int(self.fps) if self.fps else NEXUS_DEFAULT_FPS
         self.current_vt.vt_signal_update_image.connect(self.update_image)
         self.current_vt.vt_signal_update_fps_label.connect(self.update_fps_label)
         self.current_vt.vt_signal_update_resolution_label.connect(self.update_resolution_label)
@@ -466,7 +449,10 @@ class CameraApp(QMainWindow):
         return rets
 
     def client_worker(self):
-        client.run_client(self.cmd_in, self.img_out)
+        addr = self.server_ip_input.text().split(':')
+        server_ip = addr[0]
+        server_port = addr[1]
+        client.run_client(server_ip, server_port, self.cmd_in, self.img_out)
         self.server_connect_btn.setText("Connect")
         self.update_server_status_label("Client Disconnected", STATUS_DISCONNECTED_COLOR)
 
