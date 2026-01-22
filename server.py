@@ -135,15 +135,7 @@ class NetworkServer(QObject):
     def send_command(self, target_ip, command):
         payload = {"type": "query", "command": command}
         
-        if target_ip == "BROADCAST":
-            for ip, sock in list(self.clients.items()):
-                try:
-                    send_json(sock, payload)
-                    self._add_to_history(ip, command)
-                except:
-                    pass
-            self.signals.log.emit(f"Broadcast sent: {command}")
-        elif target_ip in self.clients:
+        if target_ip in self.clients:
             try:
                 send_json(self.clients[target_ip], payload)
                 self._add_to_history(target_ip, command)
@@ -191,10 +183,10 @@ class ServerGUI(QMainWindow):
         self.txt_query = QLineEdit()
         self.txt_query.setPlaceholderText("Enter Command Here...")
         btn_send = QPushButton("Send to Selected")
-        btn_broadcast = QPushButton("Broadcast All")
+        btn_select_all = QPushButton("Select All")
         query_layout.addWidget(self.txt_query)
         query_layout.addWidget(btn_send)
-        query_layout.addWidget(btn_broadcast)
+        query_layout.addWidget(btn_select_all)
         grp_query.setLayout(query_layout)
         
         grp_log = QGroupBox("System Logs")
@@ -239,7 +231,7 @@ class ServerGUI(QMainWindow):
         main_layout.addWidget(splitter)
         
         btn_send.clicked.connect(self.on_send_clicked)
-        btn_broadcast.clicked.connect(self.on_broadcast_clicked)
+        btn_select_all.clicked.connect(self.on_select_all_clicked)
         remove_selected_btn.clicked.connect(self.remove_client)
 
         # self.list_clients.itemDoubleClicked.connect(self.show_client_history)
@@ -334,10 +326,10 @@ class ServerGUI(QMainWindow):
                 self.server.send_command(ip, cmd)
         self.txt_query.clear()
 
-    def on_broadcast_clicked(self):
-        cmd = self.txt_query.text()
-        if cmd:
-            self.server.send_command("BROADCAST", cmd)
+    def on_select_all_clicked(self):
+        for index in range(self.list_clients.count()):
+            item = self.list_clients.item(index)
+            item.setCheckState(Qt.Checked)
 
     @Slot(str, str, str, str)
     def update_display(self, ip, ts, b64_img, meta):
