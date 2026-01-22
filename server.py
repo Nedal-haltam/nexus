@@ -171,7 +171,7 @@ class ServerGUI(QMainWindow):
         self.list_clients.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_clients.customContextMenuRequested.connect(self.show_context_menu)
 
-        remove_selected_btn = QPushButton("Remove Selected")
+        remove_selected_btn = QPushButton("Remove Selected Clients")
         remove_selected_btn.setStyleSheet("background-color: #ffcccc; color: darkred;")
         client_layout.addWidget(QLabel("Connected Clients:"))
         client_layout.addWidget(self.list_clients)
@@ -184,9 +184,11 @@ class ServerGUI(QMainWindow):
         self.txt_query.setPlaceholderText("Enter Command Here...")
         btn_send = QPushButton("Send to Selected")
         btn_select_all = QPushButton("Select All")
+        btn_unselect_all = QPushButton("Un-Select All")
         query_layout.addWidget(self.txt_query)
         query_layout.addWidget(btn_send)
         query_layout.addWidget(btn_select_all)
+        query_layout.addWidget(btn_unselect_all)
         grp_query.setLayout(query_layout)
         
         grp_log = QGroupBox("System Logs")
@@ -232,6 +234,7 @@ class ServerGUI(QMainWindow):
         
         btn_send.clicked.connect(self.on_send_clicked)
         btn_select_all.clicked.connect(self.on_select_all_clicked)
+        btn_unselect_all.clicked.connect(self.on_unselect_all_clicked)
         remove_selected_btn.clicked.connect(self.remove_client)
 
         # self.list_clients.itemDoubleClicked.connect(self.show_client_history)
@@ -330,6 +333,11 @@ class ServerGUI(QMainWindow):
         for index in range(self.list_clients.count()):
             item = self.list_clients.item(index)
             item.setCheckState(Qt.Checked)
+
+    def on_unselect_all_clicked(self):
+        for index in range(self.list_clients.count()):
+            item = self.list_clients.item(index)
+            item.setCheckState(Qt.Unchecked)
 
     @Slot(str, str, str, str)
     def update_display(self, ip, ts, b64_img, meta):
