@@ -35,6 +35,8 @@ MODEL_PATH = "./models/yolov8s-world.pt"
 model : YOLO = None
 classes : list[str] = []
 command_queue : queue.Queue = queue.Queue()
+latest_detections = []
+latest_detections_lock = threading.Lock()
 
 def load_model(model_path):
     print("Loading model...")
@@ -111,10 +113,6 @@ class VideoThread(QThread):
         self.latest_frame = None
         self.latest_frame_lock = threading.Lock()
 
-        self.client_thread = None
-        self.latest_detections = []
-        self.latest_detections_lock = threading.Lock()
-
     def init_video_capture(self) -> bool:
         self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG, [
             cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000
@@ -156,8 +154,8 @@ class VideoThread(QThread):
 
     def draw_detections(self, frame, results):
         if results is None: return frame
-        with self.latest_detections_lock:
-            self.latest_detections.clear()
+        with latest_detections_lock:
+            latest_detections.clear()
 
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -169,8 +167,8 @@ class VideoThread(QThread):
             label_text = f"{label_name} {conf:.2f}"
 
             detected_image = frame[y1:y2, x1:x2]
-            with self.latest_detections_lock:
-                self.latest_detections.append((label_name, conf, detected_image.copy()))
+            with latest_detections_lock:
+                latest_detections.append((label_name, conf, detected_image.copy()))
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             (w, h), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -213,31 +211,11 @@ class VideoThread(QThread):
         if self.cap:
             self.cap.release()
 
-    def cmd_in(self, command_text : str):
-        command_queue.put(command_text.strip())
-
-    def img_out(self):
-        rets = []
-        with self.latest_detections_lock:
-            for label_name, conf, img in self.latest_detections:
-                # clear font
-                cv2.putText(img, f"{label_name} {conf:.2f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-                _, buffer = cv2.imencode('.jpg', img)
-                img = base64.b64encode(buffer).decode('utf-8')
-                rets.append(img)
-        return rets
-
-    def client_worker(self):
-        client.run_client(self.cmd_in, self.img_out)
-        pass
-
     def run(self):
         global command_queue, classes, model
 
         self.capture_thread = threading.Thread(target=self.capture_worker, daemon=True)
-        self.client_thread = threading.Thread(target=self.client_worker, daemon=True)
         self.capture_thread.start()
-        self.client_thread.start()
 
         while self._run_flag:
             
@@ -300,6 +278,8 @@ class CameraApp(QMainWindow):
         self._init_ui_components()
         self.current_vt = None
 
+        self.client_thread = None
+
     def _init_ui_components(self):
         self._setup_video_panel()
         self._setup_controls_panel()
@@ -317,6 +297,7 @@ class CameraApp(QMainWindow):
         self.controls_panel.setLayout(self.controls_layout)
         
         self._create_camera_config_group()
+        self._create_server_connection_group()
         self._create_fps_control_group()
         self._create_control_unit_group()
         self._create_status_group()
@@ -336,6 +317,21 @@ class CameraApp(QMainWindow):
         
         layout.addRow("Camera IP/URL:", self.ip_input)
         layout.addRow(self.connect_btn)
+        group.setLayout(layout)
+        self.controls_layout.addWidget(group)
+
+    def _create_server_connection_group(self):
+        group = QGroupBox("Server Connection")
+        layout = QFormLayout()
+        
+        self.server_ip_input = QLineEdit()
+        self.server_ip_input.setPlaceholderText("Server IP-Address")
+        
+        self.server_connect_btn = QPushButton("Connect")
+        self.server_connect_btn.clicked.connect(self.server_toggle_connection)
+        
+        layout.addRow("Camera IP/URL:", self.server_ip_input)
+        layout.addRow(self.server_connect_btn)
         group.setLayout(layout)
         self.controls_layout.addWidget(group)
 
@@ -377,6 +373,7 @@ class CameraApp(QMainWindow):
         layout = QFormLayout()
         
         self.status_label = QLabel("Disconnected")
+        self.server_status_label = QLabel("Disconnected")
         self.actual_fps_label = QLabel("0")
         self.incoming_res_label = QLabel("N/A")
         self.display_res_label = QLabel("N/A")
@@ -385,6 +382,7 @@ class CameraApp(QMainWindow):
         self.error_label.setStyleSheet("color: red;")
 
         layout.addRow("Status:", self.status_label)
+        layout.addRow("Server Status:", self.server_status_label)
         layout.addRow("Actual FPS:", self.actual_fps_label)
         layout.addRow("Incoming Res:", self.incoming_res_label)
         layout.addRow("Displayed Res:", self.display_res_label)
@@ -440,11 +438,46 @@ class CameraApp(QMainWindow):
         else:
             self._connect_stream()
 
+    def server_toggle_connection(self):
+        if self.client_thread and self.client_thread.is_alive():
+            client.stop_client()
+            self.client_thread.join(timeout=0.1)
+            self.client_thread = None
+            self.server_connect_btn.setText("Connect")
+            self.update_server_status_label("Client Disconnected", STATUS_DISCONNECTED_COLOR)
+        else:
+            self.client_thread = threading.Thread(target=self.client_worker, daemon=True)
+            self.client_thread.start()
+            self.server_connect_btn.setText("Disconnect")
+            self.update_server_status_label("Client Connected", STATUS_CONNECTED_COLOR)
+
+    def cmd_in(self, command_text : str):
+        command_queue.put(command_text.strip())
+
+    def img_out(self):
+        rets = []
+        with latest_detections_lock:
+            for label_name, conf, img in latest_detections:
+                # clear font
+                cv2.putText(img, f"{label_name} {conf:.2f}", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                _, buffer = cv2.imencode('.jpg', img)
+                img = base64.b64encode(buffer).decode('utf-8')
+                rets.append(img)
+        return rets
+
+    def client_worker(self):
+        client.run_client(self.cmd_in, self.img_out)
+        self.server_connect_btn.setText("Connect")
+        self.update_server_status_label("Client Disconnected", STATUS_DISCONNECTED_COLOR)
+
     def update_image(self, cv_img):
         self.video_label.setPixmap(QPixmap.fromImage(cv_img))
     def update_status_label(self, msg, color):
         self.status_label.setText(msg)
         self.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+    def update_server_status_label(self, msg, color):
+        self.server_status_label.setText(msg)
+        self.server_status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
     def update_error_label(self, err_msg):
         self.error_label.setText(err_msg)
     def update_resolution_label(self, incoming, displayed):
@@ -474,7 +507,6 @@ class CameraApp(QMainWindow):
         event.accept()
 
 if __name__ == "__main__":
-
     cv2.setNumThreads(8)
     cv2.setUseOptimized(True)
 
@@ -483,9 +515,6 @@ if __name__ == "__main__":
         exit(1)
     model = load_model(MODEL_PATH)
     model.set_classes(classes if classes else [''])
-
-    # t = threading.Thread(target=input_thread, daemon=True)
-    # t.start()
 
     app = QApplication(sys.argv)
     window = CameraApp()

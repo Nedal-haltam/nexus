@@ -1,6 +1,7 @@
 import socket
 import struct
 import json
+import threading
 import time
 import base64
 import sys
@@ -71,34 +72,6 @@ def send_image(img, sock):
     # print("Response sent successfully.")
     return True
 
-def rec_cmd_send_img(sock, cmd_handler_callback, img_getter_callback):
-    last_img_time = 0
-    while True:
-        current_time = time.time()
-        if current_time - last_img_time >= 1:
-            imgs = img_getter_callback()
-            for img in imgs:
-                if not send_image(img, sock):
-                    return
-            last_img_time = current_time
-
-        try:
-            query : dict = recv_json(sock)
-            if not query:
-                print("Server closed connection.")
-                return
-        except (socket.timeout, TimeoutError):
-            continue
-
-        print(f"Received Query: {query}")
-        if query.get('type') == 'query':
-            command_text = query.get('command')
-            # imgs = cmd_handler_callback(command_text)
-            # for img in imgs:
-            #     if not send_image(img, sock):
-            #         return
-            cmd_handler_callback(command_text)
-
 def connect_to_server():
     print(f"Attempting connection to {SERVER_IP}:{SERVER_PORT}...")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -108,25 +81,36 @@ def connect_to_server():
     print(f"Connected to Server!")
     return sock
 
-def run_client(cmd_handler_callback, img_getter_callback):
-    running = True
-    while running:
-        try:
-            sock : socket.socket = connect_to_server()
-            rec_cmd_send_img(sock, cmd_handler_callback, img_getter_callback)
-        except KeyboardInterrupt:
-            print("Client shutting down.")
-            sock.close()
-            running = False
-        except Exception as e:
-            print(f"\033[91mConnection error: {e}\033[0m")
-            continue
-        finally:
-            try: sock.close()
-            except: pass
-            if running:
-                print("Reconnecting in 3 seconds...")
-                time.sleep(3)
+stop_event = threading.Event()
+def stop_client():
+    stop_event.set()
 
-if __name__ == "__main__":
-    run_client(foo_cmd, foo_img)
+def run_client(cmd_handler_callback, img_getter_callback):
+    stop_event.clear()
+    sock : socket.socket = connect_to_server()
+    try:
+        last_img_time = 0
+        while not stop_event.is_set():
+            current_time = time.time()
+            if current_time - last_img_time >= 1:
+                imgs = img_getter_callback()
+                for img in imgs:
+                    if not send_image(img, sock): return
+                last_img_time = current_time
+
+            try:
+                query : dict = recv_json(sock)
+                if not query:
+                    print("Server closed connection.")
+                    return
+            except (socket.timeout, TimeoutError):
+                continue
+
+            if query.get('type') == 'query':
+                command_text = query.get('command')
+                cmd_handler_callback(command_text)
+    except Exception as e:
+        print(f"\033[91mConnection error: {e}\033[0m")
+    finally:
+        try: sock.close()
+        except: pass
