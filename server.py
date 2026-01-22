@@ -5,6 +5,7 @@ import struct
 import threading
 import os
 import base64
+import time
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
@@ -42,10 +43,18 @@ class ClientListWidget(QWidget):
         # self.timer.setSingleShot(True)
         # self.timer.timeout.connect(self.turn_off_led)
 
+        self.last_beep_time = 0
+        self.muted = False
+
     def flash(self):
         """Turns the LED Green, then starts timer to turn it off."""
         self.led.setStyleSheet(self.led_style_on)
         # self.timer.start()
+        current_time = time.time()
+        if not self.muted and (current_time - self.last_beep_time > SERVER_NOTIFY_SOUND_COOLDOWN_SECONDS):
+            try: QApplication.beep()
+            except: pass
+            self.last_beep_time = current_time
 
     def turn_off_led(self):
         """Reverts LED to Gray."""
@@ -323,6 +332,9 @@ class ServerGUI(QMainWindow):
             action_turn_off_led = menu.addAction("Turn Off LED")
             action_turn_off_led.triggered.connect(lambda: self.turn_off_client_led(item))
 
+            action_toggle_sound = menu.addAction("Toggle Notify Sound")
+            action_toggle_sound.triggered.connect(lambda: self.toggle_client_notify_sound(item))
+
             menu.exec(self.list_clients.mapToGlobal(pos))
 
     def show_client_history(self, item):
@@ -343,6 +355,13 @@ class ServerGUI(QMainWindow):
         widget = self.list_clients.itemWidget(item)
         if widget:
             widget.turn_off_led()
+
+    def toggle_client_notify_sound(self, item):
+        widget = self.list_clients.itemWidget(item)
+        if widget:
+            widget.muted = not widget.muted
+            status = "muted" if widget.muted else "unmuted"
+            self.log(f"Notification sound for {item.text()} is now {status}.")
 
     @Slot(str)
     def log(self, msg):
