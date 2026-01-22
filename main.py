@@ -429,7 +429,13 @@ class CameraApp(QMainWindow):
             self.server_connect_btn.setText("Connect")
             self.update_server_status_label("Client Disconnected", STATUS_DISCONNECTED_COLOR)
         else:
-            self.client_thread = threading.Thread(target=self.client_worker, daemon=True)
+            addr = self.server_ip_input.text().split(':')
+            if not addr or len(addr) != 2:
+                self.update_error_label("Server IP Address is invalid")
+                return
+            server_ip = addr[0]
+            server_port = addr[1]
+            self.client_thread = threading.Thread(target=self.client_worker, args=(server_ip, server_port), daemon=True)
             self.client_thread.start()
             self.server_connect_btn.setText("Disconnect")
             self.update_server_status_label("Client Connected", STATUS_CONNECTED_COLOR)
@@ -448,10 +454,7 @@ class CameraApp(QMainWindow):
                 rets.append(img)
         return rets
 
-    def client_worker(self):
-        addr = self.server_ip_input.text().split(':')
-        server_ip = addr[0]
-        server_port = addr[1]
+    def client_worker(self, server_ip, server_port):            
         client.run_client(server_ip, server_port, self.cmd_in, self.img_out)
         self.server_connect_btn.setText("Connect")
         self.update_server_status_label("Client Disconnected", STATUS_DISCONNECTED_COLOR)
