@@ -57,6 +57,7 @@ class NetworkServer(QObject):
         self.server_socket = None
         self.signals = ServerSignals()
         self.clients = {}
+        self.client_history = {}
 
     def start_server(self):
         self.running = True
@@ -74,6 +75,7 @@ class NetworkServer(QObject):
                 ip_id = f"{addr[0]}:{addr[1]}"
                 
                 self.clients[ip_id] = client_sock
+                self.client_history[ip_id] = []
                 self.signals.client_connected.emit(ip_id, client_sock)
                 self.signals.log.emit(f"New connection: {ip_id}")
                 
@@ -99,8 +101,8 @@ class NetworkServer(QObject):
             self.signals.log.emit(f"Client {ip_id} error: {e}")
         finally:
             conn.close()
-            if ip_id in self.clients:
-                del self.clients[ip_id]
+            if ip_id in self.clients: del self.clients[ip_id]
+            if ip_id in self.client_history: del self.client_history[ip_id]
             self.signals.client_disconnected.emit(ip_id)
             self.signals.log.emit(f"Client disconnected: {ip_id}")
 
@@ -119,6 +121,17 @@ class NetworkServer(QObject):
         except Exception as e:
             print(f"Failed to save data: {e}")
 
+    def _add_to_history(self, client_id, command):
+        if client_id not in self.client_history:
+            self.client_history[client_id] = []
+        ts = datetime.now().strftime("%H:%M:%S")
+        entry = f"[{ts}] {command}"
+
+        self.client_history[client_id].append(entry)
+
+        if len(self.client_history[client_id]) > 10:
+            self.client_history[client_id].pop(0)
+
     def send_command(self, target_ip, command):
         payload = {"type": "query", "command": command}
         
@@ -126,12 +139,14 @@ class NetworkServer(QObject):
             for ip, sock in list(self.clients.items()):
                 try:
                     send_json(sock, payload)
+                    self._add_to_history(ip, command)
                 except:
                     pass
             self.signals.log.emit(f"Broadcast sent: {command}")
         elif target_ip in self.clients:
             try:
                 send_json(self.clients[target_ip], payload)
+                self._add_to_history(target_ip, command)
                 self.signals.log.emit(f"Sent to {target_ip}: {command}")
             except Exception as e:
                 self.signals.log.emit(f"Send failed: {e}")
@@ -159,6 +174,9 @@ class ServerGUI(QMainWindow):
         grp_clients = QGroupBox("Client Management")
         client_layout = QVBoxLayout()
         self.list_clients = QListWidget()
+
+        self.list_clients.setToolTip("Double-click a client to see sent query history")
+
         remove_selected_btn = QPushButton("Remove Selected")
         remove_selected_btn.setStyleSheet("background-color: #ffcccc; color: darkred;")
         client_layout.addWidget(QLabel("Connected Clients:"))
@@ -222,11 +240,24 @@ class ServerGUI(QMainWindow):
         btn_broadcast.clicked.connect(self.on_broadcast_clicked)
         remove_selected_btn.clicked.connect(self.remove_client)
 
+        self.list_clients.itemDoubleClicked.connect(self.show_client_history)
+
     def connect_signals(self):
         self.server.signals.log.connect(self.log)
         self.server.signals.client_connected.connect(self.add_client_to_list)
         self.server.signals.client_disconnected.connect(self.remove_client_from_list)
         self.server.signals.image_received.connect(self.update_display)
+
+    def show_client_history(self, item):
+        client_id = item.text()
+        history = self.server.client_history.get(client_id, [])
+        
+        if not history:
+            info_text = "No queries have been sent to this client yet."
+        else:
+            info_text = "\n".join(history)
+            
+        QMessageBox.information(self, f"History: {client_id}", info_text)
 
     @Slot(str)
     def log(self, msg):
