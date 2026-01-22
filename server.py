@@ -8,10 +8,54 @@ import base64
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QListWidget, QTextEdit, QSplitter, QGroupBox, QMessageBox, QListWidgetItem, QMenu)
-from PySide6.QtCore import Qt, Signal, QObject, Slot
-from PySide6.QtGui import QImage, QPixmap, QTextCursor
+                               QListWidget, QTextEdit, QSplitter, QGroupBox, 
+                               QMessageBox, QListWidgetItem, QMenu, QCheckBox)
+from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
+from PySide6.QtGui import QImage, QPixmap, QTextCursor, QColor
 from consts import *
+
+class ClientListWidget(QWidget):
+    def __init__(self, text):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setSpacing(10)
+
+        self.checkbox = QCheckBox()
+        
+        self.led = QLabel()
+        self.led.setFixedSize(14, 14)
+        self.led_style_off = "background-color: gray; border-radius: 7px; border: 1px solid darkgray;"
+        self.led_style_on = "background-color: #00ff00; border-radius: 7px; border: 1px solid green;"
+        self.led.setStyleSheet(self.led_style_off)
+
+        self.label = QLabel(text)
+        self.label.setStyleSheet("font-weight: bold;")
+
+        layout.addWidget(self.checkbox)
+        layout.addWidget(self.label)
+        layout.addWidget(self.led)
+        layout.addStretch()
+
+        # self.timer = QTimer()
+        # self.timer.setInterval(200)
+        # self.timer.setSingleShot(True)
+        # self.timer.timeout.connect(self.turn_off_led)
+
+    def flash(self):
+        """Turns the LED Green, then starts timer to turn it off."""
+        self.led.setStyleSheet(self.led_style_on)
+        # self.timer.start()
+
+    def turn_off_led(self):
+        """Reverts LED to Gray."""
+        self.led.setStyleSheet(self.led_style_off)
+
+    def is_checked(self):
+        return self.checkbox.isChecked()
+
+    def set_checked(self, state):
+        self.checkbox.setChecked(state)
 
 def send_json(sock, data_dict):
     try:
@@ -106,8 +150,8 @@ class NetworkServer(QObject):
                     ts = data.get('timestamp', '')
                     client_ip = data.get('client_ip', '')
                     
-                    # self._save_data(client_ip, ts, img_b64)
-                    self.signals.image_received.emit(client_ip, ts, img_b64, json.dumps(data, indent=2))
+                    if False: self._save_data(client_ip, ts, img_b64)
+                    self.signals.image_received.emit(ip_id, ts, img_b64, json.dumps(data, indent=2))
         except Exception as e:
             self.signals.log.emit(f"Client {ip_id} error: {e}")
         finally:
@@ -188,7 +232,7 @@ class ServerGUI(QMainWindow):
         client_layout.addWidget(self.list_clients)
         client_layout.addWidget(remove_selected_btn)
         grp_clients.setLayout(client_layout)
-                
+        
         grp_query = QGroupBox("Query Panel")
         query_layout = QVBoxLayout()
         self.txt_query = QLineEdit()
@@ -276,13 +320,10 @@ class ServerGUI(QMainWindow):
             action_toggle = menu.addAction("Toggle Selection")
             action_toggle.triggered.connect(lambda: self.toggle_check_state(item))
 
-            menu.exec(self.list_clients.mapToGlobal(pos))
+            action_turn_off_led = menu.addAction("Turn Off LED")
+            action_turn_off_led.triggered.connect(lambda: self.turn_off_client_led(item))
 
-    def toggle_check_state(self, item):
-        if item.checkState() == Qt.Checked:
-            item.setCheckState(Qt.Unchecked)
-        else:
-            item.setCheckState(Qt.Checked)
+            menu.exec(self.list_clients.mapToGlobal(pos))
 
     def show_client_history(self, item):
         client_id = item.text()
@@ -292,6 +333,16 @@ class ServerGUI(QMainWindow):
         else:
             info_text = "\n".join(history)
         QMessageBox.information(self, f"History: {client_id}", info_text)
+
+    def toggle_check_state(self, item):
+        widget = self.list_clients.itemWidget(item)
+        if widget:
+            widget.set_checked(not widget.is_checked())
+
+    def turn_off_client_led(self, item):
+        widget = self.list_clients.itemWidget(item)
+        if widget:
+            widget.turn_off_led()
 
     @Slot(str)
     def log(self, msg):
@@ -306,9 +357,14 @@ class ServerGUI(QMainWindow):
 
     @Slot(str, object)
     def add_client_to_list(self, ip_id, sock):
-        item = QListWidgetItem(ip_id)
-        item.setCheckState(Qt.Unchecked) 
+        item = QListWidgetItem(self.list_clients)
+        item.setText(ip_id)
+        item.setForeground(QColor("transparent"))
+        widget = ClientListWidget(ip_id)
+        item.setSizeHint(widget.sizeHint())
+        
         self.list_clients.addItem(item)
+        self.list_clients.setItemWidget(item, widget)
 
     @Slot(str)
     def remove_client_from_list(self, ip_id):
@@ -320,7 +376,8 @@ class ServerGUI(QMainWindow):
         checked_clients = []
         for index in range(self.list_clients.count()):
             item = self.list_clients.item(index)
-            if item.checkState() == Qt.Checked:
+            widget = self.list_clients.itemWidget(item)
+            if widget and widget.is_checked():
                 checked_clients.append(item.text())
 
         if not checked_clients:
@@ -343,7 +400,8 @@ class ServerGUI(QMainWindow):
         checked_clients = []
         for index in range(self.list_clients.count()):
             item = self.list_clients.item(index)
-            if item.checkState() == Qt.Checked:
+            widget = self.list_clients.itemWidget(item)
+            if widget and widget.is_checked():
                 checked_clients.append(item.text())
 
         if not checked_clients:
@@ -359,15 +417,26 @@ class ServerGUI(QMainWindow):
     def on_select_all_clicked(self):
         for index in range(self.list_clients.count()):
             item = self.list_clients.item(index)
-            item.setCheckState(Qt.Checked)
+            widget = self.list_clients.itemWidget(item)
+            if widget:
+                widget.set_checked(True)
 
     def on_unselect_all_clicked(self):
         for index in range(self.list_clients.count()):
             item = self.list_clients.item(index)
-            item.setCheckState(Qt.Unchecked)
+            widget = self.list_clients.itemWidget(item)
+            if widget:
+                widget.set_checked(False)
 
     @Slot(str, str, str, str)
     def update_display(self, ip, ts, b64_img, meta):
+        items = self.list_clients.findItems(ip, Qt.MatchExactly)
+        if items:
+            item = items[0]
+            widget = self.list_clients.itemWidget(item)
+            if widget:
+                widget.flash()
+
         self.log(f"ALERT: Response received from {ip}")
         self.lbl_meta.setText(f"<b>Source:</b> {ip}<br><b>Time:</b> {ts}")
         
