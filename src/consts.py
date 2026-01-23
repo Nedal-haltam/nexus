@@ -11,9 +11,9 @@ STATUS_DISCONNECTED_COLOR = "orange"
 STATUS_ERROR_COLOR = "red"
 NEXUS_CAMERA_AUTO_RECONNECT = True
 
-MODEL_PATH = "./models/yolov8s-world.pt"
-# MODEL_PATH = "./models/yolov8s-worldv2.pt"
-# MODEL_PATH = "./models/yolov8m-worldv2.pt"
+MODEL_PATH = "../models/yolov8s-world.pt"
+# MODEL_PATH = "../models/yolov8s-worldv2.pt"
+# MODEL_PATH = "../models/yolov8m-worldv2.pt"
 INFERENCE_DEVICE = 'cpu'
 VIDEO_CAPTURE_TIMEOUT_MS = 5000
 POST_CAMERA_RECONNECT_WAIT_ITERATIONS = 20

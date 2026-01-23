@@ -501,7 +501,7 @@ if __name__ == "__main__":
 
     if not os.path.exists(MODEL_PATH):
         print(f"Error: Model file '{MODEL_PATH}' not found.")
-        exit(1)
+        sys.exit(1)
     model = load_model(MODEL_PATH)
     model.set_classes(classes if classes else [''])
 
