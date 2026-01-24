@@ -1,19 +1,5 @@
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QGroupBox, QFormLayout)
-from PySide6.QtCore import QThread, Signal, Qt
-from PySide6.QtGui import QImage, QPixmap, QIntValidator
-import sys
-import cv2
-import time
-import os
-from ultralytics import YOLO
-import threading
-import torch
-import queue
-import base64
 import client
-from consts import *
+from common import *
 
 model : YOLO = None
 classes : list[str] = []

@@ -1,19 +1,4 @@
-import sys
-import socket
-import json
-import struct
-import threading
-import os
-import base64
-import time
-from datetime import datetime
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-                               QListWidget, QTextEdit, QSplitter, QGroupBox, 
-                               QMessageBox, QListWidgetItem, QMenu, QCheckBox)
-from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer
-from PySide6.QtGui import QImage, QPixmap, QTextCursor, QColor
-from consts import *
+from common import *
 
 class ClientListWidget(QWidget):
     def __init__(self, text):

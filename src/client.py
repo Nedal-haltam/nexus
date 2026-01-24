@@ -1,14 +1,4 @@
-import socket
-import struct
-import json
-import threading
-import time
-import base64
-import sys
-import cv2
-import numpy as np
-from datetime import datetime
-from consts import *
+from common import *
 
 def send_json(sock, data_dict):
     try:
