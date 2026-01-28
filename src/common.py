@@ -10,7 +10,6 @@ import torch
 import cv2
 import queue
 import numpy as np
-
 from datetime import datetime
 from ultralytics import YOLO
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QThread
@@ -47,6 +46,7 @@ C2S_CONNECTION_TIMEOUT = 5
 
 SERVER_SYS_LOG_MAX_SIZE = 1024
 SERVER_SYS_LOG_DELETE_LOG_SIZE = 512
+SERVER_BIND_IP = '0.0.0.0'
 SERVER_PORT = 5000
 SERVER_BACKLOG = 128
 SENT_COMMAND_HISTORY_SIZE_LIMIT = 10

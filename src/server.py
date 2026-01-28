@@ -112,7 +112,7 @@ class NetworkServer(QObject):
     def _listen_loop(self):
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.server_socket.bind(('0.0.0.0', self.port))
+            self.server_socket.bind((SERVER_BIND_IP, self.port))
             self.server_socket.listen(SERVER_BACKLOG)
             self.signals.log.emit(f"Server listening on port {self.port}")
 
