@@ -11,3 +11,6 @@ publish-client:
 	$(PYINSTALLER) --exclude-module PyQt6 --collect-all ultralytics --collect-all clip --collect-all pandas --onefile --name nexus_client .\src\main.py
 publish-server:
 	$(PYINSTALLER) --exclude-module PyQt6 --collect-all ultralytics --collect-all clip --collect-all pandas --onefile --name nexus_server .\src\server.py
+
+ssl-setup:
+	openssl.exe req -x509 -nodes -days 365 -newkey rsa:4096 -keyout ".\ssl-files\server.key" -out ".\ssl-files\server.crt" -config "./ssl-files/san.cnf"

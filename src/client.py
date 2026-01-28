@@ -61,8 +61,15 @@ def send_image(img, sock):
 
 def connect_to_server(server_ip, server_port):
     print(f"Attempting connection to {server_ip}:{server_port}...")
+
+    context = ssl.create_default_context()
+    context.load_verify_locations(SERVER_CERT_PATH)
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(C2S_CONNECTION_TIMEOUT)
+
+    sock = context.wrap_socket(sock, server_hostname=server_ip)
+
     sock.connect((server_ip, int(server_port)))
     sock.settimeout(CLIENT_RECEIVE_TIMEOUT)
     print(f"Connected to Server!")

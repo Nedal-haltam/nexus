@@ -9,6 +9,7 @@ import sys
 import torch
 import cv2
 import queue
+import ssl
 import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
@@ -41,12 +42,14 @@ VIDEO_CAPTURE_TIMEOUT_MS = 5000
 POST_CAMERA_RECONNECT_WAIT_ITERATIONS = 20
 POST_CAMERA_RECONNECT_WAIT_INTERVAL = 0.1
 
+SERVER_CERT_PATH = './ssl-files/server.crt'
+SERVER_KEY_PATH = './ssl-files/server.key'
 CS_JSON_PROTOCOL_HEADER_SIZE = 4
 C2S_CONNECTION_TIMEOUT = 5
 
 SERVER_SYS_LOG_MAX_SIZE = 1024
 SERVER_SYS_LOG_DELETE_LOG_SIZE = 512
-SERVER_BIND_IP = '0.0.0.0'
+SERVER_BIND_IP = '127.0.0.1'
 SERVER_PORT = 5000
 SERVER_BACKLOG = 128
 SENT_COMMAND_HISTORY_SIZE_LIMIT = 10

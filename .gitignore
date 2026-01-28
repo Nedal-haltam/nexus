@@ -5,3 +5,4 @@
 /dist
 *.spec
 /src/__pycache__
+/ssl-files

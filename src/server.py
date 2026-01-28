@@ -111,8 +111,14 @@ class NetworkServer(QObject):
 
     def _listen_loop(self):
         try:
+            context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            context.load_cert_chain(certfile=SERVER_CERT_PATH, keyfile=SERVER_KEY_PATH)
+
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.bind((SERVER_BIND_IP, self.port))
+
+            self.server_socket = context.wrap_socket(self.server_socket, server_side=True)
+
             self.server_socket.listen(SERVER_BACKLOG)
             self.signals.log.emit(f"Server listening on port {self.port}")
 
